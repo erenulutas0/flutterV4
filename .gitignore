@@ -70,6 +70,18 @@ target/
 docker-compose.override.yml
 *.dump
 
+# Environment variables and secrets
+.env
+.env.local
+.env.*.local
+*.env
+secrets/
+*.secret
+
+# Application specific
+application-local.properties
+application-secret.properties
+
 # Database backups
 backup_*.sql
 backup_*.dump

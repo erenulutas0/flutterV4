@@ -5,8 +5,8 @@ services:
     container_name: english-app-postgres
     environment:
       POSTGRES_DB: EnglishApp
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
     ports:
       - "5432:5432"
     volumes:
@@ -51,8 +51,8 @@ services:
       
       # Database
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/EnglishApp
-      SPRING_DATASOURCE_USERNAME: postgres
-      SPRING_DATASOURCE_PASSWORD: postgres
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-postgres}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
       SPRING_DATASOURCE_DRIVER_CLASS_NAME: org.postgresql.Driver
       
       # JPA
@@ -69,9 +69,10 @@ services:
       # Cache
       CACHE_SENTENCES_TTL: 604800
       
-      # Ollama (external service - must be running on host)
-      LANGCHAIN4J_OLLAMA_CHAT_MODEL_BASE_URL: http://host.docker.internal:11434
-      LANGCHAIN4J_OLLAMA_CHAT_MODEL_MODEL_NAME: llama2:7b
+      # Ollama (RunPod GPU service - RTX 3090)
+      # Set LANGCHAIN4J_OLLAMA_CHAT_MODEL_BASE_URL environment variable
+      LANGCHAIN4J_OLLAMA_CHAT_MODEL_BASE_URL: ${LANGCHAIN4J_OLLAMA_CHAT_MODEL_BASE_URL:-http://host.docker.internal:11434}
+      LANGCHAIN4J_OLLAMA_CHAT_MODEL_MODEL_NAME: ${LANGCHAIN4J_OLLAMA_CHAT_MODEL_MODEL_NAME:-qwen2.5:32b}
       LANGCHAIN4J_OLLAMA_CHAT_MODEL_TEMPERATURE: 0.2
       LANGCHAIN4J_OLLAMA_CHAT_MODEL_TIMEOUT: 300s
       LANGCHAIN4J_OLLAMA_CHAT_MODEL_TOP_P: 0.9
@@ -82,6 +83,7 @@ services:
       
     ports:
       - "8082:8082"
+      - "9092:9092"  # Socket.io port
     depends_on:
       postgres:
         condition: service_healthy

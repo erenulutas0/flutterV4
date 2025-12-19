@@ -32,6 +32,23 @@
 
   <title>VocabMaster</title>
   <link rel="manifest" href="manifest.json">
+  <script>
+    // Force cache bypass - load webrtc.js with timestamp and no defer
+    (function() {
+      const webrtcScript = document.createElement('script');
+      const timestamp = Date.now();
+      const random = Math.random();
+      webrtcScript.src = 'webrtc.js?v=' + timestamp + '&nocache=' + random + '&t=' + timestamp;
+      webrtcScript.async = false; // Load synchronously to ensure it's available
+      webrtcScript.onerror = function() {
+        console.error('Failed to load webrtc.js');
+      };
+      webrtcScript.onload = function() {
+        console.log('webrtc.js loaded successfully, WebRTCManager available:', typeof window.WebRTCManager !== 'undefined');
+      };
+      document.head.insertBefore(webrtcScript, document.head.firstChild);
+    })();
+  </script>
 </head>
 <body>
   <script src="flutter_bootstrap.js" type="application/javascript"></script>

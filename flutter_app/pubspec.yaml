@@ -28,6 +28,10 @@ dependencies:
   speech_to_text: ^6.6.0
   permission_handler: ^11.3.1
   audioplayers: ^5.2.1
+  
+  # WebRTC ve Socket.io için
+  socket_io_client: ^2.0.3+1
+  # flutter_webrtc: ^0.9.48+hotfix.1  # Web için şimdilik devre dışı
 
 dev_dependencies:
   flutter_test:

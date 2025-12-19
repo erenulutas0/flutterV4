@@ -3,6 +3,7 @@ import 'words_screen.dart';
 import 'sentences_screen.dart';
 import 'practice_screen.dart';
 import 'chat_screen.dart';
+import 'matchmaking_screen.dart';
 import '../theme/app_theme.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -269,6 +270,32 @@ class HomePage extends StatelessWidget {
                           ),
                         ),
                       ],
+                    ),
+                    const SizedBox(height: 12),
+                    // Eşleşme Butonu
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (_) => const MatchmakingScreen()),
+                          );
+                        },
+                        icon: const Icon(Icons.video_call),
+                        label: const Text(
+                          'Eşleşme Başlat',
+                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: AppTheme.accentBlue,
+                          side: const BorderSide(color: AppTheme.accentBlue, width: 2),
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                      ),
                     ),
                   ],
                 ),

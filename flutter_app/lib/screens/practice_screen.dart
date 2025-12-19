@@ -720,8 +720,8 @@ class _PracticeScreenState extends State<PracticeScreen> {
                     style: TextButton.styleFrom(
                       foregroundColor: AppTheme.primaryPurple,
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    ),
                   ),
+                ),
                 if (isCorrect == true)
                   const Icon(Icons.check_circle, color: AppTheme.accentGreen)
                 else if (isCorrect == false)
@@ -756,10 +756,10 @@ class _PracticeScreenState extends State<PracticeScreen> {
                             ),
                           )
                         : IconButton(
-                            icon: const Icon(Icons.check),
-                            onPressed: () => _checkTranslation(index, _translationControllers[index]!.text),
-                            color: AppTheme.primaryPurple,
-                          )
+                        icon: const Icon(Icons.check),
+                        onPressed: () => _checkTranslation(index, _translationControllers[index]!.text),
+                        color: AppTheme.primaryPurple,
+                      )
                     : null,
               ),
               onChanged: (value) {
