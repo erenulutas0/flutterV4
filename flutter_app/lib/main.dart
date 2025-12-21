@@ -5,8 +5,14 @@ import 'providers/word_provider.dart';
 import 'providers/sentence_provider.dart';
 import 'services/api_service.dart';
 import 'theme/app_theme.dart';
+import 'utils/backend_config.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  
+  // Emülatör tespitini başlat
+  await BackendConfig.initialize();
+  
   runApp(const MyApp());
 }
 

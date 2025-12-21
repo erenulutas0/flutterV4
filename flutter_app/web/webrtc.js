@@ -206,16 +206,27 @@ class WebRTCManager {
       container.style.left = '0';
       container.style.width = '100vw';
       container.style.height = '100vh';
-      container.style.zIndex = '9999'; // Flutter Stack'in üzerinde (kontroller 10001'de)
+      container.style.zIndex = '0'; // Flutter Stack'in altında (kontroller görünsün)
       container.style.backgroundColor = '#000';
       container.style.pointerEvents = 'none'; // Tıklamaları geçir
-      // Body'ye direkt ekle
+      // Body'ye ekle (Flutter Stack ile aynı seviyede)
       document.body.appendChild(container);
-      console.log('✅ Created remote video container with z-index 9999 (above Flutter Stack) - v11 - FINAL FIX');
+      console.log('✅ Created remote video container with z-index 0 (below Flutter Stack, controls visible) - v15 - FIX');
+      
+      // Flutter Stack'in z-index'ini artır (kontrollerin görünmesi için)
+      setTimeout(() => {
+        const flutterHost = document.querySelector('flt-scene-host');
+        if (flutterHost) {
+          flutterHost.style.zIndex = '10000';
+          flutterHost.style.position = 'relative';
+          console.log('✅ Flutter Stack z-index set to 10000');
+        }
+      }, 100);
     } else {
       // Container zaten varsa, z-index'i güncelle (eski versiyon olabilir)
       container.style.zIndex = '9999';
-      console.log('✅ Updated existing remote video container z-index to 9999');
+        container.style.zIndex = '0'; // Güncelle
+        console.log('✅ Updated existing remote video container z-index to 0');
     }
 
     // Eğer video element zaten varsa, sadece stream'i güncelle

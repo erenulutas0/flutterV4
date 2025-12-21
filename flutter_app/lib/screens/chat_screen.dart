@@ -9,7 +9,8 @@ import 'dart:typed_data';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import '../theme/app_theme.dart';
 import '../services/piper_tts_service.dart';
-import 'dart:html' as html if (dart.library.html) 'dart:html';
+import '../utils/backend_config.dart';
+// import 'dart:html' as html; // Web only - disabled for Android
 
 class ChatMessage {
   final String text;
@@ -299,17 +300,9 @@ class _ChatScreenState extends State<ChatScreen> {
           if (kIsWeb) {
             // Web için Blob URL kullan (data URI çalışmıyor)
             try {
-              // dart:html kullanarak Blob oluştur
-              final blob = html.Blob([audioData], 'audio/wav');
-              final url = html.Url.createObjectUrlFromBlob(blob);
-              await _audioPlayer.play(UrlSource(url));
-              
-              // Playback tamamlandığında URL'i temizle
-              StreamSubscription? urlCleanupSubscription;
-              urlCleanupSubscription = _audioPlayer.onPlayerComplete.listen((_) {
-                html.Url.revokeObjectUrl(url);
-                urlCleanupSubscription?.cancel();
-              });
+              // Web-only: dart:html disabled for Android
+              // Android'de direkt BytesSource kullan
+              await _audioPlayer.play(BytesSource(audioData));
             } catch (e) {
               print('Web audio playback error: $e');
               // Fallback: BytesSource dene
@@ -453,7 +446,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
     try {
       final response = await http.post(
-        Uri.parse('http://localhost:8082/api/chatbot/chat'),
+        Uri.parse('${BackendConfig.apiBaseUrl}/chatbot/chat'),
         headers: {'Content-Type': 'application/json'},
         body: json.encode({'message': message}),
       );
@@ -1420,7 +1413,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
     try {
       final response = await http.post(
-        Uri.parse('http://localhost:8082/api/chatbot/speaking-test/generate-questions'),
+        Uri.parse('${BackendConfig.apiBaseUrl}/chatbot/speaking-test/generate-questions'),
         headers: {'Content-Type': 'application/json'},
         body: json.encode({
           'testType': _testMode,
@@ -1545,7 +1538,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
     try {
       final evalResponse = await http.post(
-        Uri.parse('http://localhost:8082/api/chatbot/speaking-test/evaluate'),
+        Uri.parse('${BackendConfig.apiBaseUrl}/chatbot/speaking-test/evaluate'),
         headers: {'Content-Type': 'application/json'},
         body: json.encode({
           'testType': _testMode,

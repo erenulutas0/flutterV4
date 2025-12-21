@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:socket_io_client/socket_io_client.dart' as IO;
 import 'video_call_screen.dart';
 import '../theme/app_theme.dart';
+import '../utils/backend_config.dart';
 
 class MatchmakingScreen extends StatefulWidget {
   const MatchmakingScreen({super.key});
@@ -27,7 +28,24 @@ class _MatchmakingScreenState extends State<MatchmakingScreen> {
   }
 
   void _connectSocket() {
-    socket = IO.io('http://localhost:9092', <String, dynamic>{
+    // Async işlemi başlat
+    _initializeAndConnect();
+  }
+  
+  Future<void> _initializeAndConnect() async {
+    // Backend URL'i BackendConfig'den al (async tespit için)
+    String socketUrl;
+    try {
+      socketUrl = await BackendConfig.getSocketUrl();
+      print('🔌 Backend bilgisi: ${BackendConfig.debugInfo}');
+      print('🔌 Socket URL: $socketUrl');
+    } catch (e) {
+      // Hata durumunda varsayılan olarak gerçek cihaz IP'si kullan
+      socketUrl = 'http://192.168.1.102:9092';
+      print('⚠️ Emülatör tespiti hatası, varsayılan IP kullanılıyor: $socketUrl');
+    }
+    
+    socket = IO.io(socketUrl, <String, dynamic>{
       'transports': ['websocket'],
       'autoConnect': false,
       'reconnection': true,
@@ -38,17 +56,24 @@ class _MatchmakingScreenState extends State<MatchmakingScreen> {
     socket!.connect();
 
     socket!.onConnect((_) {
-      print('Socket connected');
+      print('✅ Socket connected to: $socketUrl');
       if (!_isInitialized) {
         _isInitialized = true;
+      }
+      if (mounted) {
+        setState(() {
+          // Bağlantı başarılı
+        });
       }
     });
 
     socket!.onDisconnect((_) {
       print('Socket disconnected - attempting reconnect');
-      setState(() {
-        isSearching = false;
-      });
+      if (mounted) {
+        setState(() {
+          isSearching = false;
+        });
+      }
     });
 
     socket!.onError((error) {
@@ -56,16 +81,34 @@ class _MatchmakingScreenState extends State<MatchmakingScreen> {
     });
 
     socket!.on('queue_status', (data) {
-      setState(() {
-        queueSize = data['queueSize'] ?? 0;
-      });
+      print('📊 Queue status received: $data');
+      if (mounted) {
+        setState(() {
+          queueSize = data['queueSize'] ?? 0;
+        });
+        print('📊 Queue size: $queueSize');
+      }
     });
 
     socket!.on('match_found', (data) {
+      print('🎯 MATCH_FOUND EVENT RECEIVED!');
+      print('📦 Event data: $data');
+      print('📦 Event data type: ${data.runtimeType}');
+      
+      if (!mounted) {
+        print('⚠️ Widget disposed, ignoring match_found event');
+        return;
+      }
+      
       setState(() {
         isSearching = false;
-        roomId = data['roomId'];
-        matchedUserId = data['matchedUserId'];
+        if (data is Map) {
+          roomId = data['roomId']?.toString();
+          matchedUserId = data['matchedUserId']?.toString();
+          print('✅ RoomId: $roomId, MatchedUserId: $matchedUserId');
+        } else {
+          print('❌ Data is not a Map!');
+        }
       });
 
       // Role'i al (caller veya callee)
@@ -126,30 +169,32 @@ class _MatchmakingScreenState extends State<MatchmakingScreen> {
       socket!.emit('join_room', {'roomId': roomId});
 
       // Video call ekranına geç (socket bağlantısını koru)
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(
-          builder: (context) => VideoCallScreen(
-            socket: socket!,
-            roomId: roomId!,
-            matchedUserId: matchedUserId!,
-            role: role, // Role'i geçir
+      if (mounted && roomId != null && matchedUserId != null) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (context) => VideoCallScreen(
+              socket: socket!,
+              roomId: roomId!,
+              matchedUserId: matchedUserId!,
+              role: role, // Role'i geçir
+            ),
           ),
-        ),
-      );
+        );
+      } else {
+        print('⚠️ Cannot navigate: widget not mounted or missing data');
+      }
     });
 
     socket!.onDisconnect((_) {
       print('Socket disconnected');
-      if (isSearching) {
+      if (mounted && isSearching) {
         setState(() {
           isSearching = false;
         });
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Bağlantı koptu. Lütfen tekrar deneyin.')),
-          );
-        }
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Bağlantı koptu. Lütfen tekrar deneyin.')),
+        );
       }
     });
   }
@@ -177,19 +222,29 @@ class _MatchmakingScreenState extends State<MatchmakingScreen> {
   void _joinQueue() {
     if (socket != null && socket!.connected) {
       String userId = DateTime.now().millisecondsSinceEpoch.toString();
+      print('🚀 Joining queue with userId: $userId');
+      print('🔌 Socket connected: ${socket!.connected}');
       socket!.emit('join_queue', {'userId': userId});
-      setState(() {
-        isSearching = true;
-      });
+      if (mounted) {
+        setState(() {
+          isSearching = true;
+        });
+      }
+      print('✅ join_queue event emitted');
+    } else {
+      print('❌ Cannot join queue: socket is null or not connected');
+      print('Socket: $socket, Connected: ${socket?.connected}');
     }
   }
 
   void _cancelSearch() {
     socket?.emit('leave_queue');
-    setState(() {
-      isSearching = false;
-      queueSize = 0;
-    });
+    if (mounted) {
+      setState(() {
+        isSearching = false;
+        queueSize = 0;
+      });
+    }
   }
 
   @override

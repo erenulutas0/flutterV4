@@ -5,6 +5,7 @@ import 'dart:convert';
 import '../providers/word_provider.dart';
 import '../models/word.dart';
 import '../theme/app_theme.dart';
+import '../utils/backend_config.dart';
 
 class PracticeScreen extends StatefulWidget {
   const PracticeScreen({super.key});
@@ -70,7 +71,7 @@ class _PracticeScreenState extends State<PracticeScreen> {
     try {
       final word = _selectedWord?.englishWord ?? _wordController.text.trim();
       final response = await http.post(
-        Uri.parse('http://localhost:8082/api/chatbot/generate-sentences'),
+        Uri.parse('${BackendConfig.apiBaseUrl}/chatbot/generate-sentences'),
         headers: {'Content-Type': 'application/json'},
         body: json.encode({
           'word': word,
@@ -168,7 +169,7 @@ class _PracticeScreenState extends State<PracticeScreen> {
     try {
       // No need to extract meanings from sentences anymore (they don't contain Turkish translations)
       final response = await http.post(
-        Uri.parse('http://localhost:8082/api/chatbot/save-to-today'),
+        Uri.parse('${BackendConfig.apiBaseUrl}/chatbot/save-to-today'),
         headers: {'Content-Type': 'application/json'},
         body: json.encode({
           'englishWord': word,
@@ -228,7 +229,7 @@ class _PracticeScreenState extends State<PracticeScreen> {
 
     try {
       final response = await http.post(
-        Uri.parse('http://localhost:8082/api/chatbot/check-translation'),
+        Uri.parse('${BackendConfig.apiBaseUrl}/chatbot/check-translation'),
         headers: {'Content-Type': 'application/json'},
         body: json.encode({
           'englishSentence': _generatedSentences[index],

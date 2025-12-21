@@ -49,8 +49,39 @@
       document.head.insertBefore(webrtcScript, document.head.firstChild);
     })();
   </script>
-</head>
-<body>
-  <script src="flutter_bootstrap.js" type="application/javascript"></script>
-</body>
+    <style>
+      /* Flutter Stack'in kontrollerinin remote video'nun üstünde görünmesi için */
+      flt-scene-host {
+        position: relative !important;
+        z-index: 10000 !important;
+      }
+      /* Flutter app container */
+      body > flt-scene-host {
+        z-index: 10000 !important;
+      }
+      /* Flutter render tree - kontrollerin görünmesi için */
+      flt-scene-host > * {
+        z-index: 10000 !important;
+        position: relative !important;
+      }
+      /* Flutter Stack içindeki Positioned widget'ları (kontroller) - en üstte */
+      flt-scene-host [style*="position: absolute"],
+      flt-scene-host [style*="position: fixed"] {
+        z-index: 10001 !important;
+      }
+      /* Remote video container - Flutter Stack'in altında (kontroller görünsün) */
+      #remoteVideoContainer {
+        z-index: 0 !important;
+        position: fixed !important;
+      }
+      /* Local video container - en üstte */
+      #localVideoContainer {
+        z-index: 10001 !important;
+        position: fixed !important;
+      }
+    </style>
+  </head>
+  <body>
+    <script src="flutter_bootstrap.js" type="application/javascript"></script>
+  </body>
 </html>

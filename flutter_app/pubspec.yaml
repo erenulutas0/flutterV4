@@ -31,7 +31,13 @@ dependencies:
   
   # WebRTC ve Socket.io için
   socket_io_client: ^2.0.3+1
-  # flutter_webrtc: ^0.9.48+hotfix.1  # Web için şimdilik devre dışı
+  flutter_webrtc: ^0.9.48+hotfix.1
+  
+  # Cihaz bilgisi için (emülatör tespiti)
+  device_info_plus: ^10.1.0
+  
+  # Ekran açık tutma için (video call sırasında)
+  wakelock_plus: ^1.2.1
 
 dev_dependencies:
   flutter_test:

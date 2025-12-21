@@ -3,9 +3,13 @@ import 'package:http/http.dart' as http;
 import '../models/word.dart';
 import '../models/sentence_practice.dart';
 import '../models/word_review.dart';
+import '../utils/backend_config.dart';
 
 class ApiService {
-  static const String baseUrl = 'http://localhost:8082/api';
+  // Backend URL'i BackendConfig'den al
+  static String get baseUrl {
+    return BackendConfig.apiBaseUrl;
+  }
 
   Future<List<Word>> getAllWords() async {
     try {

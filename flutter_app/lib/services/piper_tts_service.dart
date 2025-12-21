@@ -2,11 +2,12 @@ import 'dart:convert';
 import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 import 'package:flutter/foundation.dart';
+import '../utils/backend_config.dart';
 
 class PiperTtsService {
   final String baseUrl;
   
-  PiperTtsService({this.baseUrl = 'http://localhost:8082'});
+  PiperTtsService({String? baseUrl}) : baseUrl = baseUrl ?? BackendConfig.baseUrl;
   
   /// Check if Piper TTS is available on the backend
   Future<bool> isAvailable() async {
@@ -89,6 +90,7 @@ class PiperTtsService {
     }
   }
 }
+
 
 
 
