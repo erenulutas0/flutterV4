@@ -2,6 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/sentence_provider.dart';
 import '../theme/app_theme.dart';
+import '../widgets/empty_state.dart';
+import '../widgets/loading_skeleton.dart';
+import '../services/grammar_service.dart';
+import '../widgets/grammar_suggestion.dart';
 
 class SentencesScreen extends StatefulWidget {
   const SentencesScreen({super.key});
@@ -13,6 +17,8 @@ class SentencesScreen extends StatefulWidget {
 class _SentencesScreenState extends State<SentencesScreen> {
   String _selectedDifficulty = 'all';
   final Map<String, bool> _showDefinitionMap = {};
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
 
   @override
   void initState() {
@@ -22,6 +28,18 @@ class _SentencesScreenState extends State<SentencesScreen> {
       provider.loadAllSentences();
       provider.loadStats();
     });
+    
+    _searchController.addListener(() {
+      setState(() {
+        _searchQuery = _searchController.text.toLowerCase();
+      });
+    });
+  }
+  
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
   }
 
   @override
@@ -40,11 +58,23 @@ class _SentencesScreenState extends State<SentencesScreen> {
         ),
         child: Consumer<SentenceProvider>(
           builder: (context, provider, _) {
-            final filteredSentences = _selectedDifficulty == 'all'
-                ? provider.sentences
-                : provider.sentences
-                    .where((s) => s.difficulty.toLowerCase() == _selectedDifficulty)
-                    .toList();
+            // Filtreleme mantığı: Hem zorluk hem arama metnine göre
+            final filteredSentences = provider.sentences.where((s) {
+              // Zorluk filtresi
+              if (_selectedDifficulty != 'all' && 
+                  s.difficulty.toLowerCase() != _selectedDifficulty) {
+                return false;
+              }
+              
+              // Arama filtresi
+              if (_searchQuery.isNotEmpty) {
+                final english = s.englishSentence.toLowerCase();
+                final turkish = s.turkishTranslation.toLowerCase();
+                return english.contains(_searchQuery) || turkish.contains(_searchQuery);
+              }
+              
+              return true;
+            }).toList();
 
             return Column(
               children: [
@@ -82,6 +112,28 @@ class _SentencesScreenState extends State<SentencesScreen> {
                       ),
                     ),
                   ),
+                  
+                // Arama Çubuğu
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  child: TextField(
+                    controller: _searchController,
+                    style: const TextStyle(color: AppTheme.textPrimary),
+                    decoration: InputDecoration(
+                      hintText: 'Cümlelerde ara...',
+                      hintStyle: const TextStyle(color: AppTheme.textSecondary),
+                      prefixIcon: const Icon(Icons.search, color: AppTheme.textSecondary),
+                      filled: true,
+                      fillColor: AppTheme.darkSurfaceVariant,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide.none,
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    ),
+                  ),
+                ),
+                
                 // Filter
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -110,7 +162,14 @@ class _SentencesScreenState extends State<SentencesScreen> {
                 // Sentences List
                 Expanded(
                   child: provider.isLoading
-                      ? const Center(child: CircularProgressIndicator())
+                      ? ListView(
+                          padding: const EdgeInsets.all(16),
+                          children: const [
+                            SentenceCardSkeleton(),
+                            SentenceCardSkeleton(),
+                            SentenceCardSkeleton(),
+                          ],
+                        )
                       : provider.error != null
                           ? Center(
                               child: Card(
@@ -118,26 +177,49 @@ class _SentencesScreenState extends State<SentencesScreen> {
                                 margin: const EdgeInsets.all(16),
                                 child: Padding(
                                   padding: const EdgeInsets.all(16),
-                                  child: Text(
-                                    'Hata: ${provider.error}',
-                                    style: const TextStyle(color: AppTheme.accentRed),
+                                  child: Row(
+                                    children: [
+                                      const Icon(
+                                        Icons.error_outline,
+                                        color: AppTheme.accentRed,
+                                        size: 32,
+                                      ),
+                                      const SizedBox(width: 16),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            const Text(
+                                              'Bir hata oluştu',
+                                              style: TextStyle(
+                                                color: AppTheme.textPrimary,
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 4),
+                                            Text(
+                                              provider.error!,
+                                              style: const TextStyle(
+                                                color: AppTheme.textSecondary,
+                                                fontSize: 12,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      TextButton(
+                                        onPressed: () => provider.loadAllSentences(),
+                                        child: const Text('Tekrar Dene'),
+                                      ),
+                                    ],
                                   ),
                                 ),
                               ),
                             )
                           : filteredSentences.isEmpty
-                              ? Center(
-                                  child: Card(
-                                    color: AppTheme.darkSurface,
-                                    margin: const EdgeInsets.all(16),
-                                    child: Padding(
-                                      padding: const EdgeInsets.all(32),
-                                      child: Text(
-                                        'Cümle bulunamadı.',
-                                        style: TextStyle(color: AppTheme.textTertiary),
-                                      ),
-                                    ),
-                                  ),
+                              ? EmptySentencesState(
+                                  onAddSentence: () => _showAddSentenceDialog(context),
                                 )
                               : ListView.builder(
                                   padding: const EdgeInsets.all(16),
@@ -269,6 +351,8 @@ class _SentencesScreenState extends State<SentencesScreen> {
             const SizedBox(height: 8),
             Text(
               sentence.turkishTranslation,
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
               style: const TextStyle(
                 fontSize: 14,
                 color: AppTheme.textSecondary,
@@ -396,8 +480,8 @@ class _SentencesScreenState extends State<SentencesScreen> {
     final lowerSentence = sentence.toLowerCase();
     final lowerWord = word.toLowerCase().trim();
     
-    // Regex ile tam kelime eşleşmesi bul
-    final regex = RegExp(r'\b' + RegExp.escape(lowerWord) + r'\b', caseSensitive: false);
+    // Regex ile kelime eşleşmesi bul (ek almış hallerini de kapsa - suffix)
+    final regex = RegExp(r'\b' + RegExp.escape(lowerWord) + r'\w*\b', caseSensitive: false);
     final matches = regex.allMatches(lowerSentence);
 
     if (matches.isEmpty) {
@@ -499,31 +583,155 @@ class _SentencesScreenState extends State<SentencesScreen> {
   }
 
   void _showAddSentenceDialog(BuildContext context) {
-    final provider = Provider.of<SentenceProvider>(context, listen: false);
-    final englishController = TextEditingController();
-    final turkishController = TextEditingController();
-    String difficulty = 'easy';
-
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: AppTheme.darkSurface,
-        title: const Text('Yeni Cümle Ekle', style: TextStyle(color: AppTheme.textPrimary)),
-        content: Column(
+      builder: (context) => _AddSentenceDialog(
+        provider: Provider.of<SentenceProvider>(context, listen: false),
+      ),
+    );
+  }
+}
+
+/// Stateful dialog for adding sentences with grammar checking
+class _AddSentenceDialog extends StatefulWidget {
+  final SentenceProvider provider;
+
+  const _AddSentenceDialog({required this.provider});
+
+  @override
+  State<_AddSentenceDialog> createState() => _AddSentenceDialogState();
+}
+
+class _AddSentenceDialogState extends State<_AddSentenceDialog> {
+  final TextEditingController _englishController = TextEditingController();
+  final TextEditingController _turkishController = TextEditingController();
+  String _difficulty = 'easy';
+  
+  // Grammar checking state
+  GrammarCheckResult? _grammarResult;
+  bool _isCheckingGrammar = false;
+  final GrammarDebouncer _debouncer = GrammarDebouncer(milliseconds: 1000);
+
+  @override
+  void initState() {
+    super.initState();
+    // Listen to English text changes for grammar checking
+    _englishController.addListener(_onEnglishTextChanged);
+  }
+
+  @override
+  void dispose() {
+    _debouncer.cancel();
+    _englishController.dispose();
+    _turkishController.dispose();
+    super.dispose();
+  }
+
+  void _onEnglishTextChanged() {
+    final text = _englishController.text.trim();
+    
+    if (text.isEmpty) {
+      setState(() {
+        _grammarResult = null;
+        _isCheckingGrammar = false;
+      });
+      return;
+    }
+
+    // Show checking indicator
+    setState(() {
+      _isCheckingGrammar = true;
+    });
+
+    // Debounce the grammar check
+    _debouncer.run(() async {
+      final result = await GrammarService.checkGrammar(text);
+      if (mounted) {
+        setState(() {
+          _grammarResult = result;
+          _isCheckingGrammar = false;
+        });
+      }
+    });
+  }
+
+  void _applySuggestion(GrammarError error, String suggestion) {
+    final text = _englishController.text;
+    final newText = text.substring(0, error.fromPos) +
+        suggestion +
+        text.substring(error.toPos);
+    
+    _englishController.text = newText;
+    // Position cursor after the suggestion
+    _englishController.selection = TextSelection.fromPosition(
+      TextPosition(offset: error.fromPos + suggestion.length),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      backgroundColor: AppTheme.darkSurface,
+      title: const Text(
+        'Yeni Cümle Ekle',
+        style: TextStyle(color: AppTheme.textPrimary),
+      ),
+      content: SingleChildScrollView(
+        child: Column(
           mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // English sentence field
             TextField(
-              controller: englishController,
+              controller: _englishController,
               style: const TextStyle(color: AppTheme.textPrimary),
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
                 labelText: 'İngilizce Cümle',
-                labelStyle: TextStyle(color: AppTheme.textSecondary),
+                labelStyle: const TextStyle(color: AppTheme.textSecondary),
+                helperText: 'Gramer kontrolü otomatik yapılacak',
+                helperStyle: TextStyle(
+                  color: AppTheme.textTertiary,
+                  fontSize: 11,
+                ),
               ),
               maxLines: 3,
+              autofocus: true,
             ),
+            
+            // Grammar check indicator/results
+            const SizedBox(height: 12),
+            if (_isCheckingGrammar)
+              const GrammarCheckingIndicator()
+            else if (_grammarResult != null)
+              if (_grammarResult!.hasErrors)
+                GrammarCheckPanel(
+                  result: _grammarResult!,
+                  onApplySuggestion: _applySuggestion,
+                )
+              else if (_grammarResult!.message != null)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8.0),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.error_outline, color: AppTheme.accentOrange, size: 20),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          _grammarResult!.message!,
+                          style: const TextStyle(color: AppTheme.accentOrange, fontSize: 13),
+                        ),
+                      ),
+                    ],
+                  ),
+                )
+              else
+                const GrammarCorrectIndicator(),
+            
             const SizedBox(height: 16),
+            
+            // Turkish translation field
             TextField(
-              controller: turkishController,
+              controller: _turkishController,
               style: const TextStyle(color: AppTheme.textPrimary),
               decoration: const InputDecoration(
                 labelText: 'Türkçe Çevirisi',
@@ -531,9 +739,12 @@ class _SentencesScreenState extends State<SentencesScreen> {
               ),
               maxLines: 3,
             ),
+            
             const SizedBox(height: 16),
+            
+            // Difficulty dropdown
             DropdownButtonFormField<String>(
-              value: difficulty,
+              value: _difficulty,
               dropdownColor: AppTheme.darkSurfaceVariant,
               style: const TextStyle(color: AppTheme.textPrimary),
               decoration: const InputDecoration(
@@ -546,40 +757,42 @@ class _SentencesScreenState extends State<SentencesScreen> {
                 DropdownMenuItem(value: 'hard', child: Text('Zor')),
               ],
               onChanged: (value) {
-                difficulty = value!;
+                setState(() {
+                  _difficulty = value!;
+                });
               },
             ),
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('İptal'),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              if (englishController.text.isNotEmpty &&
-                  turkishController.text.isNotEmpty) {
-                await provider.addSentence(
-                  englishSentence: englishController.text,
-                  turkishTranslation: turkishController.text,
-                  difficulty: difficulty,
-                );
-                if (mounted) {
-                  Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Cümle eklendi!'),
-                      backgroundColor: AppTheme.accentGreen,
-                    ),
-                  );
-                }
-              }
-            },
-            child: const Text('Ekle'),
-          ),
-        ],
       ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('İptal'),
+        ),
+        ElevatedButton(
+          onPressed: _englishController.text.isEmpty ||
+                  _turkishController.text.isEmpty
+              ? null
+              : () async {
+                  await widget.provider.addSentence(
+                    englishSentence: _englishController.text,
+                    turkishTranslation: _turkishController.text,
+                    difficulty: _difficulty,
+                  );
+                  if (mounted) {
+                    Navigator.pop(context);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Cümle eklendi!'),
+                        backgroundColor: AppTheme.accentGreen,
+                      ),
+                    );
+                  }
+                },
+          child: const Text('Ekle'),
+        ),
+      ],
     );
   }
 }

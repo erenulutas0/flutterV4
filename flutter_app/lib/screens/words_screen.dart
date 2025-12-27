@@ -5,6 +5,8 @@ import 'package:intl/intl.dart';
 import '../providers/word_provider.dart';
 import '../models/word.dart';
 import '../theme/app_theme.dart';
+import '../widgets/empty_state.dart';
+import '../widgets/loading_skeleton.dart';
 import 'word_sentences_screen.dart';
 
 class WordsScreen extends StatefulWidget {
@@ -349,31 +351,57 @@ class _WordsScreenState extends State<WordsScreen> {
                   ),
                   const SizedBox(height: 16),
                   if (provider.isLoading)
-                    const Center(child: CircularProgressIndicator())
-                  else if (provider.error != null)
+                    const SkeletonList(
+                      skeletonItem: WordCardSkeleton(),
+                      itemCount: 3,
+                    )
+                  else if (provider.error != null && provider.words.isEmpty)
                     Card(
                       color: AppTheme.darkSurface,
                       child: Padding(
                         padding: const EdgeInsets.all(16),
-                        child: Text(
-                          'Hata: ${provider.error}',
-                          style: const TextStyle(color: AppTheme.accentRed),
+                        child: Row(
+                          children: [
+                            const Icon(
+                              Icons.wifi_off_rounded,
+                              color: AppTheme.accentRed,
+                              size: 32,
+                            ),
+                            const SizedBox(width: 16),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text(
+                                    'Bağlantı Sorunu',
+                                    style: TextStyle(
+                                      color: AppTheme.textPrimary,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    (provider.error!.contains("Socket") || provider.error!.contains("Network") || provider.error!.contains("ClientException"))
+                                        ? "İnternet bağlantısı yok.\nOffline modda sadece eklediğiniz kelimeleri görebilirsiniz."
+                                        : provider.error!,
+                                    style: const TextStyle(
+                                      color: AppTheme.textSecondary,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            TextButton(
+                              onPressed: () => provider.loadWordsByDate(_selectedDate),
+                              child: const Text('Tekrar Dene'),
+                            ),
+                          ],
                         ),
                       ),
                     )
                   else if (provider.words.isEmpty)
-                    Card(
-                      color: AppTheme.darkSurface,
-                      child: Padding(
-                        padding: const EdgeInsets.all(32),
-                        child: Center(
-                          child: Text(
-                            'Bu tarihte kelime bulunamadı.',
-                            style: TextStyle(color: AppTheme.textTertiary),
-                          ),
-                        ),
-                      ),
-                    )
+                    const EmptyWordsState()
                   else
                     ...provider.words.map((word) => _buildWordCard(word, provider)),
                 ],
@@ -462,6 +490,8 @@ class _WordsScreenState extends State<WordsScreen> {
         ),
         title: Text(
           word.englishWord,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
           style: const TextStyle(
             fontWeight: FontWeight.bold,
             color: AppTheme.textPrimary,
@@ -541,6 +571,8 @@ class _WordsScreenState extends State<WordsScreen> {
                     ),
                     child: Text(
                       word.turkishMeaning,
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         color: AppTheme.textSecondary,
                         fontSize: 14,
@@ -620,6 +652,7 @@ class _WordsScreenState extends State<WordsScreen> {
       case 'medium':
         return AppTheme.accentOrange;
       case 'difficult':
+      case 'hard':
         return AppTheme.accentRed;
       default:
         return AppTheme.gray600;
@@ -668,7 +701,7 @@ class _WordsScreenState extends State<WordsScreen> {
               items: const [
                 DropdownMenuItem(value: 'easy', child: Text('Kolay')),
                 DropdownMenuItem(value: 'medium', child: Text('Orta')),
-                DropdownMenuItem(value: 'difficult', child: Text('Zor')),
+                DropdownMenuItem(value: 'hard', child: Text('Zor')),
               ],
               onChanged: (value) {
                 difficulty = value!;
@@ -685,12 +718,18 @@ class _WordsScreenState extends State<WordsScreen> {
             onPressed: () async {
               if (sentenceController.text.isNotEmpty &&
                   translationController.text.isNotEmpty) {
+                print('🔍 DEBUG words_screen: Adding sentence to word ${word.id}');
+                print('🔍 DEBUG: sentence="${sentenceController.text}"');
+                
                 await provider.addSentenceToWord(
                   wordId: word.id,
                   sentence: sentenceController.text,
                   translation: translationController.text,
                   difficulty: difficulty,
                 );
+                
+                print('✅ DEBUG words_screen: addSentenceToWord completed');
+                
                 if (mounted) {
                   Navigator.pop(context);
                   ScaffoldMessenger.of(context).showSnackBar(

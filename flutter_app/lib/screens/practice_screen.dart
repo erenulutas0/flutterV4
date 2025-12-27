@@ -2,10 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'dart:math'; // Added for Random
 import '../providers/word_provider.dart';
 import '../models/word.dart';
 import '../theme/app_theme.dart';
 import '../utils/backend_config.dart';
+import '../services/sync_service.dart';
 
 class PracticeScreen extends StatefulWidget {
   const PracticeScreen({super.key});
@@ -25,10 +27,12 @@ class _PracticeScreenState extends State<PracticeScreen> {
   List<TranslationResult> _translationResults = [];
   bool _isGenerating = false;
   bool _isSaving = false;
-  String _selectedMode = 'select'; // 'select' or 'manual'
+  String _selectedMode = 'select'; // 'select', 'manual', 'random'
   String _searchQuery = '';
   Set<String> _selectedLevels = {'B1'}; // A1, A2, B1, B2, C1, C2
+
   Set<String> _selectedLengths = {'medium'}; // short, medium, long
+  String _questionDirection = 'EN_TO_TR'; // 'EN_TO_TR', 'TR_TO_EN', 'MIXED'
 
   @override
   void initState() {
@@ -51,14 +55,48 @@ class _PracticeScreenState extends State<PracticeScreen> {
   }
 
   Future<void> _generateSentences() async {
-    if (_selectedWord == null && _wordController.text.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Lütfen bir kelime seçin veya yazın'),
-          backgroundColor: AppTheme.accentRed,
-        ),
-      );
-      return;
+    if (!await SyncService.hasInternet()) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Uyarı: Cümle üretmek için internet gereklidir.'),
+              backgroundColor: AppTheme.accentOrange,
+            ),
+          );
+        }
+        return;
+    }
+
+    String wordToUse = '';
+    
+    // Determine the word(s) to use based on mode
+    if (_selectedMode == 'random') {
+      final provider = Provider.of<WordProvider>(context, listen: false);
+      if (provider.words.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Henüz kelime listeniz boş.'),
+            backgroundColor: AppTheme.accentRed,
+          ),
+        );
+        return;
+      }
+      final words = List<Word>.from(provider.words)..shuffle();
+      final selectedWords = words.take(5).map((w) => w.englishWord).toList();
+      wordToUse = selectedWords.join(', ');
+    } else {
+      // Manual or Select mode
+      wordToUse = _selectedWord?.englishWord ?? _wordController.text.trim();
+      
+      if (wordToUse.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Lütfen bir kelime seçin veya yazın'),
+            backgroundColor: AppTheme.accentRed,
+          ),
+        );
+        return;
+      }
     }
 
     setState(() {
@@ -69,12 +107,11 @@ class _PracticeScreenState extends State<PracticeScreen> {
     });
 
     try {
-      final word = _selectedWord?.englishWord ?? _wordController.text.trim();
       final response = await http.post(
         Uri.parse('${BackendConfig.apiBaseUrl}/chatbot/generate-sentences'),
         headers: {'Content-Type': 'application/json'},
         body: json.encode({
-          'word': word,
+          'word': wordToUse,
           'levels': _selectedLevels.toList(),
           'lengths': _selectedLengths.toList(),
         }),
@@ -108,6 +145,15 @@ class _PracticeScreenState extends State<PracticeScreen> {
             (index) {
               final controller = TextEditingController(); // Empty by default
               _translationControllers[index] = controller;
+              
+              // Determine direction for this specific sentence
+              bool isReverse = false;
+              if (_questionDirection == 'TR_TO_EN') {
+                isReverse = true;
+              } else if (_questionDirection == 'MIXED') {
+                isReverse = Random().nextBool();
+              }
+              
               return TranslationResult(
                 sentence: sentences[index],
                 userTranslation: '', // Empty by default
@@ -115,6 +161,7 @@ class _PracticeScreenState extends State<PracticeScreen> {
                 feedback: '',
                 correctTranslation: '',
                 isChecking: false,
+                isReverse: isReverse,
               );
             },
           );
@@ -141,6 +188,18 @@ class _PracticeScreenState extends State<PracticeScreen> {
   }
 
   Future<void> _saveToToday() async {
+    if (!await SyncService.hasInternet()) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Uyarı: Kaydetmek için internet gereklidir.'),
+              backgroundColor: AppTheme.accentOrange,
+            ),
+          );
+        }
+        return;
+    }
+
     if (_generatedSentences.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -218,6 +277,18 @@ class _PracticeScreenState extends State<PracticeScreen> {
   }
 
   Future<void> _checkTranslation(int index, String userTranslation) async {
+    if (!await SyncService.hasInternet()) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Uyarı: Kontrol için internet gereklidir.'),
+              backgroundColor: AppTheme.accentOrange,
+            ),
+          );
+        }
+        return;
+    }
+
     if (userTranslation.trim().isEmpty) {
       return;
     }
@@ -228,13 +299,29 @@ class _PracticeScreenState extends State<PracticeScreen> {
     });
 
     try {
+      final result = _translationResults[index];
+      final isReverse = result.isReverse;
+      
+      final Map<String, dynamic> requestBody = {
+        'userTranslation': userTranslation,
+        'direction': isReverse ? 'TR_TO_EN' : 'EN_TO_TR',
+      };
+      
+      if (isReverse) {
+        // TR -> EN
+        // Question was Turkish (from _aiTranslations), Answer is English
+        requestBody['turkishSentence'] = _aiTranslations[index];
+        requestBody['englishSentence'] = _generatedSentences[index]; // Reference
+      } else {
+        // EN -> TR
+        // Question was English, Answer is Turkish
+        requestBody['englishSentence'] = _generatedSentences[index];
+      }
+
       final response = await http.post(
         Uri.parse('${BackendConfig.apiBaseUrl}/chatbot/check-translation'),
         headers: {'Content-Type': 'application/json'},
-        body: json.encode({
-          'englishSentence': _generatedSentences[index],
-          'userTranslation': userTranslation,
-        }),
+        body: json.encode(requestBody),
       );
 
       if (response.statusCode == 200) {
@@ -278,7 +365,7 @@ class _PracticeScreenState extends State<PracticeScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Pratik'),
+        title: const Text('Çevirme Pratiği'),
         backgroundColor: AppTheme.darkSurface,
       ),
       body: Container(
@@ -302,33 +389,51 @@ class _PracticeScreenState extends State<PracticeScreen> {
                   child: Row(
                     children: [
                       Expanded(
-                        child: ChoiceChip(
-                          label: const Text('Kelimelerimden Seç'),
-                          selected: _selectedMode == 'select',
-                          onSelected: (selected) {
-                            if (selected) {
-                              setState(() {
-                                _selectedMode = 'select';
-                                _selectedWord = null;
-                                _wordController.clear();
-                              });
-                            }
-                          },
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: ChoiceChip(
-                          label: const Text('Manuel Giriş'),
-                          selected: _selectedMode == 'manual',
-                          onSelected: (selected) {
-                            if (selected) {
-                              setState(() {
-                                _selectedMode = 'manual';
-                                _selectedWord = null;
-                              });
-                            }
-                          },
+                        child: SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          child: Row(
+                            children: [
+                              ChoiceChip(
+                                label: const Text('Seç'),
+                                selected: _selectedMode == 'select',
+                                onSelected: (selected) {
+                                  if (selected) {
+                                    setState(() {
+                                      _selectedMode = 'select';
+                                      _selectedWord = null;
+                                      _wordController.clear();
+                                    });
+                                  }
+                                },
+                              ),
+                              const SizedBox(width: 8),
+                              ChoiceChip(
+                                label: const Text('Manuel'),
+                                selected: _selectedMode == 'manual',
+                                onSelected: (selected) {
+                                  if (selected) {
+                                    setState(() {
+                                      _selectedMode = 'manual';
+                                      _selectedWord = null;
+                                    });
+                                  }
+                                },
+                              ),
+                              const SizedBox(width: 8),
+                              ChoiceChip(
+                                label: const Text('Karışık'),
+                                selected: _selectedMode == 'random',
+                                onSelected: (selected) {
+                                  if (selected) {
+                                    setState(() {
+                                      _selectedMode = 'random';
+                                      _selectedWord = null;
+                                    });
+                                  }
+                                },
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     ],
@@ -484,6 +589,66 @@ class _PracticeScreenState extends State<PracticeScreen> {
               ),
               const SizedBox(height: 16),
 
+              // Direction Selection
+              Card(
+                color: AppTheme.darkSurface,
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Çeviri Yönü:',
+                        style: TextStyle(
+                          color: AppTheme.textPrimary,
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: SegmentedButton<String>(
+                              segments: const [
+                                ButtonSegment(value: 'EN_TO_TR', label: Text('EN → TR')),
+                                ButtonSegment(value: 'TR_TO_EN', label: Text('TR → EN')),
+                                ButtonSegment(value: 'MIXED', label: Text('Karışık')),
+                              ],
+                              selected: {_questionDirection},
+                              onSelectionChanged: (Set<String> newSelection) {
+                                setState(() {
+                                  _questionDirection = newSelection.first;
+                                });
+                              },
+                              style: ButtonStyle(
+                                backgroundColor: MaterialStateProperty.resolveWith<Color>(
+                                  (Set<MaterialState> states) {
+                                    if (states.contains(MaterialState.selected)) {
+                                      return AppTheme.primaryPurple;
+                                    }
+                                    return AppTheme.darkSurfaceVariant;
+                                  },
+                                ),
+                                foregroundColor: MaterialStateProperty.resolveWith<Color>(
+                                  (Set<MaterialState> states) {
+                                    if (states.contains(MaterialState.selected)) {
+                                      return Colors.white; // Selected text color
+                                    }
+                                    return AppTheme.textPrimary; // Unselected text color
+                                  },
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+
               // Word Selection or Manual Input
               if (_selectedMode == 'select') ...[
                 // Search Bar
@@ -568,7 +733,7 @@ class _PracticeScreenState extends State<PracticeScreen> {
                     );
                   },
                 ),
-              ] else ...[
+              ] else if (_selectedMode == 'manual') ...[
                 // Manual Input
                 TextField(
                   controller: _wordController,
@@ -580,6 +745,27 @@ class _PracticeScreenState extends State<PracticeScreen> {
                     fillColor: AppTheme.darkSurfaceVariant,
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.all(Radius.circular(12)),
+                    ),
+                  ),
+                ),
+              ] else ...[
+                // Random Mode Info
+                Card(
+                  color: AppTheme.darkSurfaceVariant,
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      children: [
+                        const Icon(Icons.shuffle, color: AppTheme.primaryPurple, size: 32),
+                        const SizedBox(height: 12),
+                        Text(
+                          'Öğrendiğiniz kelimelerden rastgele 5 tanesi seçilecek ve bunlarla ilgili cümleler oluşturulacak.',
+                          textAlign: TextAlign.center,
+                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            color: AppTheme.textPrimary,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ),
@@ -625,28 +811,29 @@ class _PracticeScreenState extends State<PracticeScreen> {
                             fontWeight: FontWeight.bold,
                           ),
                     ),
-                    ElevatedButton.icon(
-                      onPressed: _isSaving ? null : _saveToToday,
-                      icon: _isSaving
-                          ? const SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: AppTheme.textPrimary,
-                              ),
-                            )
-                          : const Icon(Icons.add_circle),
-                      label: Text(_isSaving ? 'Kaydediliyor...' : 'Bugün\'e Ekle'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppTheme.accentGreen,
-                        foregroundColor: AppTheme.textPrimary,
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
+                    if (_selectedMode != 'random')
+                      ElevatedButton.icon(
+                        onPressed: _isSaving ? null : _saveToToday,
+                        icon: _isSaving
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: AppTheme.textPrimary,
+                                ),
+                              )
+                            : const Icon(Icons.add_circle),
+                        label: Text(_isSaving ? 'Kaydediliyor...' : 'Bugün\'e Ekle'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppTheme.accentGreen,
+                          foregroundColor: AppTheme.textPrimary,
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
                         ),
                       ),
-                    ),
                   ],
                 ),
                 const SizedBox(height: 16),
@@ -692,7 +879,7 @@ class _PracticeScreenState extends State<PracticeScreen> {
               children: [
                 Expanded(
                   child: Text(
-                    '${index + 1}. ${result.sentence}',
+                    '${index + 1}. ${result.isReverse ? (_aiTranslations.length > index ? _aiTranslations[index] : result.sentence) : result.sentence}',
                     style: const TextStyle(
                       color: AppTheme.textPrimary,
                       fontSize: 16,
@@ -736,7 +923,7 @@ class _PracticeScreenState extends State<PracticeScreen> {
               controller: _translationControllers[index],
               style: const TextStyle(color: AppTheme.textPrimary),
               decoration: InputDecoration(
-                labelText: 'Türkçe Çevirisi',
+                labelText: result.isReverse ? 'İngilizce Çevirisi' : 'Türkçe Çevirisi',
                 labelStyle: const TextStyle(color: AppTheme.textSecondary),
                 filled: true,
                 fillColor: AppTheme.darkSurfaceVariant,
@@ -850,6 +1037,7 @@ class TranslationResult {
   String feedback;
   String correctTranslation;
   bool isChecking;
+  bool isReverse; // True if translating TR -> EN
 
   TranslationResult({
     required this.sentence,
@@ -858,6 +1046,7 @@ class TranslationResult {
     required this.feedback,
     this.correctTranslation = '',
     this.isChecking = false,
+    this.isReverse = false,
   });
 }
 

@@ -11,12 +11,17 @@ import java.util.List;
 
 @Repository
 public interface WordRepository extends JpaRepository<Word, Long> {
-    
+
     List<Word> findByLearnedDate(LocalDate date);
-    
+
     @Query("SELECT w FROM Word w WHERE w.learnedDate BETWEEN :startDate AND :endDate ORDER BY w.learnedDate DESC")
     List<Word> findByDateRange(@Param("startDate") LocalDate startDate, @Param("endDate") LocalDate endDate);
-    
+
     @Query("SELECT DISTINCT w.learnedDate FROM Word w ORDER BY w.learnedDate DESC")
     List<LocalDate> findAllDistinctDates();
+
+    // SRS Queries
+    List<Word> findByNextReviewDateLessThanEqual(LocalDate date);
+
+    List<Word> findByReviewCountGreaterThan(int count);
 }

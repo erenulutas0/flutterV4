@@ -1,153 +1,61 @@
-# English Learning App - Flutter Web + Spring Boot
+# VocabMaster - İngilizce Kelime Öğrenme Uygulaması 🇬🇧🇹🇷
 
-A comprehensive English learning application with video call features, chatbot, and vocabulary practice.
+VocabMaster, İngilizce kelime ezberlemeyi, cümle kurmayı ve telaffuz çalışmayı kolaylaştıran kapsamlı bir Flutter uygulamasıdır. Hem online hem de offline çalışabilen yapısı sayesinde her yerde öğrenmeye devam edebilirsiniz.
 
-## Features
+## 🚀 Özellikler
 
-- 📚 Vocabulary learning with spaced repetition
-- 💬 AI-powered chatbot for conversation practice
-- 📞 Video call functionality with WebRTC
-- 🎯 Matchmaking system for practice partners
-- 🔊 Text-to-Speech (Piper TTS) integration
-- 🎨 Modern Flutter web UI
+*   **Offline Mod Desteği:** İnternetiniz olmasa bile kelime ekleyin, çalışın. İnternet geldiğinde otomatik senkronize olur.
+*   **Kelime Yönetimi:** Kelime ekleme, düzenleme, silme ve detaylı inceleme.
+*   **Cümle Pratiği:** Kelimelerle ilgili cümleler kurun, çevirilerini ekleyin.
+*   **Akıllı Sıralama:** En son eklediğiniz veya öğrendiğiniz içerikler her zaman elinizin altında.
+*   **Zorluk Seviyeleri:** Kelimeleri ve cümleleri zorluk seviyesine (Kolay, Orta, Zor) göre sınıflandırın.
+*   **Güvenli Yapı:** Hassas bilgiler `.env` dosyası üzerinden yönetilir.
 
-## Tech Stack
+## 📂 Proje Yapısı
 
-- **Frontend**: Flutter Web
-- **Backend**: Spring Boot
-- **Database**: PostgreSQL
-- **Cache**: Redis
-- **AI**: Ollama (Qwen2.5:32b)
-- **Video**: WebRTC
-- **Containerization**: Docker & Docker Compose
+*   `flutter_app/`: Flutter mobil uygulama kodları.
+*   `backend/`: (Varsa) Uygulamanın sunucu tarafı kodları.
 
-## Prerequisites
+## 🛠️ Kurulum
 
-- Docker & Docker Compose
-- Flutter SDK (for local development)
-- Java 17+ (for local backend development)
-- PostgreSQL (for local development)
-- Redis (for local development)
-- Ollama (for AI chatbot)
+### Gereksinimler
 
-## Setup
+*   [Flutter SDK](https://flutter.dev/docs/get-started/install) (3.0.0 veya üzeri)
+*   Dart SDK
 
-### 1. Clone the repository
+### Uygulamayı Çalıştırma
 
-```bash
-git clone https://github.com/erenulutas0/flutterV4.git
-cd flutterV4
-```
+1.  Repoyu klonlayın:
+    ```bash
+    git clone https://github.com/erenulutas0/flutterV4.git
+    cd flutterV4
+    ```
 
-### 2. Environment Configuration
+2.  Flutter dizinine gidin:
+    ```bash
+    cd flutter_app
+    ```
 
-Copy `.env.example` to `.env` and configure your settings:
+3.  Bağımlılıkları yükleyin:
+    ```bash
+    flutter pub get
+    ```
 
-```bash
-cp .env.example .env
-```
+4.  `.env` Dosyasını Oluşturun:
+    `flutter_app` dizininde `.env` dosyası oluşturun ve IP adreslerinizi girin:
+    ```env
+    REAL_DEVICE_IP=192.168.1.X # Bilgisayarınızın IP adresi
+    EMULATOR_IP=10.0.2.2
+    ```
 
-Edit `.env` with your configuration:
-- Database credentials
-- Ollama API URL
-- Piper TTS path (if using Windows)
+5.  Uygulamayı başlatın:
+    ```bash
+    flutter run
+    ```
 
-### 3. Run with Docker Compose
+## 📝 Lisans
 
-```bash
-docker-compose up -d
-```
+Bu proje [MIT Lisansı](LICENSE) ile lisanslanmıştır.
 
-This will start:
-- PostgreSQL on port 5432
-- Redis on port 6379
-- Spring Boot backend on port 8082
-- Flutter web frontend on port 8080
-
-### 4. Access the Application
-
-- Frontend: http://localhost:8080
-- Backend API: http://localhost:8082
-
-## Development
-
-### Backend Development
-
-```bash
-cd backend
-./mvnw spring-boot:run
-```
-
-### Frontend Development
-
-```bash
-cd flutter_app
-flutter run -d chrome
-```
-
-## Configuration
-
-### Environment Variables
-
-The application uses environment variables for sensitive configuration:
-
-- `POSTGRES_USER`: PostgreSQL username (default: postgres)
-- `POSTGRES_PASSWORD`: PostgreSQL password
-- `LANGCHAIN4J_OLLAMA_CHAT_MODEL_BASE_URL`: Ollama API URL
-- `LANGCHAIN4J_OLLAMA_CHAT_MODEL_MODEL_NAME`: Ollama model name
-- `PIPER_TTS_PATH`: Path to Piper TTS executable
-
-### Docker Compose
-
-All services are configured in `docker-compose.yml`. Environment variables can be set in `.env` file or passed directly to docker-compose.
-
-## Project Structure
-
-```
-.
-├── backend/              # Spring Boot backend
-│   ├── src/
-│   └── Dockerfile
-├── flutter_app/         # Flutter web frontend
-│   ├── lib/
-│   ├── web/
-│   └── Dockerfile
-├── docker-compose.yml   # Docker Compose configuration
-├── .env.example        # Environment variables template
-└── README.md
-```
-
-## Features in Detail
-
-### Video Call System
-- WebRTC-based peer-to-peer video calls
-- Matchmaking system for finding practice partners
-- Real-time signaling via Socket.io
-
-### AI Chatbot
-- Powered by Ollama (Qwen2.5:32b)
-- Context-aware conversations
-- English practice scenarios
-
-### Vocabulary Learning
-- Spaced repetition algorithm
-- Word definitions and examples
-- Sentence practice
-
-## Contributing
-
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
-
-## License
-
-This project is licensed under the MIT License.
-
-## Support
-
-For issues and questions, please open an issue on GitHub.
-
-
+---
+Geliştirici: Eren Ulutaş

@@ -12,38 +12,49 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 
-
 @Service
 public class WordService {
-    
+
     @Autowired
     private WordRepository wordRepository;
-    
+
     @Autowired
     private SentenceRepository sentenceRepository;
-    
+
+    @Autowired
+    private ProgressService progressService;
+
     public List<Word> getAllWords() {
         return wordRepository.findAll();
     }
-    
+
     public List<Word> getWordsByDate(LocalDate date) {
         return wordRepository.findByLearnedDate(date);
     }
-    
+
     public List<Word> getWordsByDateRange(LocalDate startDate, LocalDate endDate) {
         return wordRepository.findByDateRange(startDate, endDate);
     }
-    
+
     public List<LocalDate> getAllDistinctDates() {
         return wordRepository.findAllDistinctDates();
     }
-    
+
     public Word saveWord(Word word) {
-        return wordRepository.save(word);
+        boolean isNew = (word.getId() == null);
+        Word savedWord = wordRepository.save(word);
+
+        if (isNew) {
+            progressService.awardXp(5, "New Word: " + word.getEnglishWord());
+            progressService.updateStreak();
+        }
+
+        return savedWord;
     }
-    
+
     public Word createWord(CreateWordRequest request) {
-        System.out.println("Creating word with: " + request.getEnglish() + ", " + request.getTurkish() + ", " + request.getAddedDate());
+        System.out.println("Creating word with: " + request.getEnglish() + ", " + request.getTurkish() + ", "
+                + request.getAddedDate());
         Word word = new Word();
         word.setEnglishWord(request.getEnglish());
         word.setTurkishMeaning(request.getTurkish());
@@ -54,15 +65,15 @@ public class WordService {
         }
         return wordRepository.save(word);
     }
-    
+
     public Optional<Word> getWordById(Long id) {
         return wordRepository.findById(id);
     }
-    
+
     public void deleteWord(Long id) {
         wordRepository.deleteById(id);
     }
-    
+
     public Word updateWord(Long id, Word wordDetails) {
         Optional<Word> optionalWord = wordRepository.findById(id);
         if (optionalWord.isPresent()) {
@@ -75,7 +86,7 @@ public class WordService {
         }
         return null;
     }
-    
+
     // Sentence management methods
     public Word addSentence(Long wordId, String sentence, String translation, String difficulty) {
         Optional<Word> wordOpt = wordRepository.findById(wordId);
@@ -83,19 +94,20 @@ public class WordService {
             Word word = wordOpt.get();
             Sentence newSentence = new Sentence(sentence, translation, difficulty != null ? difficulty : "easy", word);
             word.addSentence(newSentence);
+            progressService.awardXp(3, "New Sentence for: " + word.getEnglishWord());
             return wordRepository.save(word);
         }
         return null;
     }
-    
+
     public Word deleteSentence(Long wordId, Long sentenceId) {
         Optional<Word> wordOpt = wordRepository.findById(wordId);
         Optional<Sentence> sentenceOpt = sentenceRepository.findById(sentenceId);
-        
+
         if (wordOpt.isPresent() && sentenceOpt.isPresent()) {
             Word word = wordOpt.get();
             Sentence sentence = sentenceOpt.get();
-            
+
             // Check if sentence belongs to the word
             if (sentence.getWord().getId().equals(wordId)) {
                 word.removeSentence(sentence);

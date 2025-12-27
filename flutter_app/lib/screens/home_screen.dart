@@ -4,7 +4,16 @@ import 'sentences_screen.dart';
 import 'practice_screen.dart';
 import 'chat_screen.dart';
 import 'matchmaking_screen.dart';
+import 'review_screen.dart';
 import '../theme/app_theme.dart';
+import '../services/api_service.dart';
+import '../services/srs_service.dart';
+import '../services/progress_service.dart';
+import '../services/offline_storage_service.dart';
+import '../widgets/progress_widget.dart';
+import '../screens/achievements_screen.dart';
+import '../screens/stats_screen.dart';
+import '../models/word.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -67,8 +76,219 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
-class HomePage extends StatelessWidget {
+class HomePage extends StatefulWidget {
   const HomePage({super.key});
+
+  @override
+  State<HomePage> createState() => _HomePageState();
+}
+
+class _HomePageState extends State<HomePage> {
+  final ApiService _apiService = ApiService();
+  List<Word> _allWords = [];
+  List<Word> _recentWords = [];
+  int _todayWordsCount = 0;
+  int _totalWordsCount = 0;
+  int _streakDays = 0;
+  int _xp = 0;
+  bool _isLoading = true;
+  
+  // SRS State
+  int _reviewWordsCount = 0;
+  
+  // Progress State
+  ProgressStats? _progressStats;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadData();
+  }
+
+  Future<void> _loadData() async {
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      List<Word> allWords = [];
+      List<Word> todayWords = [];
+      bool isOnline = false;
+      
+      // İnternet kontrolü
+      try {
+        allWords = await _apiService.getAllWords();
+        isOnline = true;
+        
+        // Online: Cache'e kaydet
+        await OfflineStorageService.cacheWords(
+          allWords.map((w) => w.toJson()).toList()
+        );
+      } catch (e) {
+        print('API failed, using cache: $e');
+        // Offline: Cache'den yükle
+        final cachedWords = await OfflineStorageService.getCachedWords();
+        allWords = cachedWords.map((json) => Word.fromJson(json)).toList();
+      }
+      
+      // Bugün öğrenilen kelimeleri filtrele
+      final today = DateTime.now();
+      if (isOnline) {
+        try {
+          todayWords = await _apiService.getWordsByDate(today);
+        } catch (e) {
+          todayWords = allWords.where((w) => 
+            w.learnedDate.year == today.year &&
+            w.learnedDate.month == today.month &&
+            w.learnedDate.day == today.day
+          ).toList();
+        }
+      } else {
+        // Cache'den filtrele
+        todayWords = allWords.where((w) => 
+          w.learnedDate.year == today.year &&
+          w.learnedDate.month == today.month &&
+          w.learnedDate.day == today.day
+        ).toList();
+      }
+      
+      // Pending kelimeleri de ekle
+      final pendingWords = await OfflineStorageService.getPendingWords();
+      for (var wordMap in pendingWords) {
+        allWords.add(Word(
+          id: wordMap['tempId'].hashCode,
+          englishWord: wordMap['englishWord'],
+          turkishMeaning: wordMap['turkishMeaning'],
+          learnedDate: DateTime.parse(wordMap['learnedDate']),
+          difficulty: wordMap['difficulty'] ?? 'easy',
+          notes: wordMap['notes'],
+          sentences: [],
+        ));
+        
+        // Bugün eklenen pending kelimeler
+        final wDate = DateTime.parse(wordMap['learnedDate']);
+        if (wDate.year == today.year && wDate.month == today.month && wDate.day == today.day) {
+          todayWords.add(Word(
+            id: wordMap['tempId'].hashCode,
+            englishWord: wordMap['englishWord'],
+            turkishMeaning: wordMap['turkishMeaning'],
+            learnedDate: wDate,
+            difficulty: wordMap['difficulty'] ?? 'easy',
+            notes: wordMap['notes'],
+            sentences: [],
+          ));
+        }
+      }
+      
+      // Son öğrenilen kelimeleri sırala (en yeni önce)
+      final recentWords = List<Word>.from(allWords)
+        ..sort((a, b) => b.learnedDate.compareTo(a.learnedDate));
+      
+      // Streak hesapla (ardışık günler)
+      final streak = _calculateStreak(allWords);
+      
+      // XP hesapla (her kelime 5 XP)
+      final xp = allWords.length * 5;
+      
+      // SRS: Review kelimelerini al (offline'da 0)
+      int reviewCount = 0;
+      ProgressStats? progressStats;
+      try {
+        final srsStats = await SRSService.getStats();
+        reviewCount = srsStats?.dueToday ?? 0;
+        progressStats = await ProgressService.getStats();
+      } catch (e) {
+        print('SRS/Progress failed: $e');
+      }
+      
+      // İstatistikleri cache'e kaydet (online veya offline)
+      await OfflineStorageService.cacheHomeStats(
+        totalWords: allWords.length,
+        todayWords: todayWords.length,
+        streakDays: streak,
+        xp: xp,
+      );
+
+      setState(() {
+        _allWords = allWords;
+        _recentWords = recentWords.take(4).toList();
+        _todayWordsCount = todayWords.length;
+        _totalWordsCount = allWords.length;
+        _streakDays = streak;
+        _xp = xp;
+        _progressStats = progressStats;
+        _reviewWordsCount = reviewCount;
+        _isLoading = false;
+      });
+    } catch (e) {
+      print('Error loading home data: $e');
+      
+      // Hata durumunda cache'den istatistikleri yükle
+      final cachedStats = await OfflineStorageService.getCachedHomeStats();
+      if (cachedStats != null) {
+        setState(() {
+          _totalWordsCount = cachedStats['totalWords'] ?? 0;
+          _todayWordsCount = cachedStats['todayWords'] ?? 0;
+          _streakDays = cachedStats['streakDays'] ?? 0;
+          _xp = cachedStats['xp'] ?? 0;
+          _isLoading = false;
+        });
+      } else {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  int _calculateStreak(List<Word> words) {
+    if (words.isEmpty) return 0;
+    
+    // Tarihleri sırala (en yeni önce) ve unique yap
+    final dates = words.map((w) => DateTime(
+      w.learnedDate.year,
+      w.learnedDate.month,
+      w.learnedDate.day,
+    )).toSet().toList()..sort((a, b) => b.compareTo(a));
+    
+    if (dates.isEmpty) return 0;
+    
+    // Bugünün tarihini al
+    final today = DateTime.now();
+    final todayDate = DateTime(today.year, today.month, today.day);
+    
+    // Streak hesapla - bugünden geriye doğru ardışık günleri say
+    int streak = 0;
+    DateTime currentDate = todayDate;
+    
+    // Bugün veya dün kelime öğrenilmiş mi kontrol et
+    bool hasTodayOrYesterday = dates.contains(todayDate) || 
+                                dates.contains(todayDate.subtract(const Duration(days: 1)));
+    
+    if (!hasTodayOrYesterday) {
+      return 0; // Bugün ve dün öğrenilmemişse streak yok
+    }
+    
+    // Bugünden geriye doğru ardışık günleri say
+    for (int i = 0; i < dates.length; i++) {
+      final expectedDate = todayDate.subtract(Duration(days: streak));
+      final dateToCheck = DateTime(
+        expectedDate.year,
+        expectedDate.month,
+        expectedDate.day,
+      );
+      
+      if (dates.any((d) => d.year == dateToCheck.year && 
+                         d.month == dateToCheck.month && 
+                         d.day == dateToCheck.day)) {
+        streak++;
+      } else {
+        break;
+      }
+    }
+    
+    return streak;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -175,7 +395,9 @@ class HomePage extends StatelessWidget {
                               ),
                             ),
                             Text(
-                              '5 / 10 kelime',
+                              _isLoading 
+                                ? 'Yükleniyor...' 
+                                : '$_todayWordsCount / 10 kelime',
                               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                                 color: Colors.white,
                                 fontWeight: FontWeight.bold,
@@ -187,7 +409,7 @@ class HomePage extends StatelessWidget {
                         ClipRRect(
                           borderRadius: BorderRadius.circular(8),
                           child: LinearProgressIndicator(
-                            value: 0.5,
+                            value: _isLoading ? 0.0 : (_todayWordsCount / 10).clamp(0.0, 1.0),
                             minHeight: 8,
                             backgroundColor: AppTheme.darkSurfaceVariant,
                             valueColor: const AlwaysStoppedAnimation<Color>(
@@ -200,6 +422,104 @@ class HomePage extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 24),
+                // Progress Widget (XP, Level, Streak)
+                if (_progressStats != null)
+                  InkWell(
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const AchievementsScreen(),
+                        ),
+                      );
+                    },
+                    child: ProgressWidget(stats: _progressStats!),
+                  ),
+                if (_progressStats != null)
+                  const SizedBox(height: 24),
+                // SRS Review Card
+                // SRS Review Card
+                if (_reviewWordsCount > 0) ...[
+                  Container(
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [
+                          Color(0xFF10B981),
+                          Color(0xFF059669),
+                        ],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color(0xFF10B981).withOpacity(0.3),
+                          blurRadius: 8,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (_) => const ReviewScreen()),
+                          ).then((_) => _loadData()); // Refresh after review
+                        },
+                        borderRadius: BorderRadius.circular(16),
+                        child: Padding(
+                          padding: const EdgeInsets.all(20),
+                          child: Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withOpacity(0.2),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: const Icon(
+                                  Icons.replay_circle_filled,
+                                  color: Colors.white,
+                                  size: 32,
+                                ),
+                              ),
+                              const SizedBox(width: 16),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Tekrar Zamanı! 🎯',
+                                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      '$_reviewWordsCount kelime tekrar edilmeyi bekliyor',
+                                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                        color: Colors.white.withOpacity(0.9),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const Icon(
+                                Icons.arrow_forward_ios,
+                                color: Colors.white,
+                                size: 20,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                ],
                 // Action Buttons - Hierarchical Layout
                 Column(
                   children: [
@@ -301,13 +621,34 @@ class HomePage extends StatelessWidget {
                 ),
                 const SizedBox(height: 32),
                 // Statistics Section
-                Text(
-                  'İstatistiklerim',
-                  textAlign: TextAlign.left,
-                  style: Theme.of(context).textTheme.headlineLarge?.copyWith(
-                    fontWeight: FontWeight.bold,
-                    color: AppTheme.textPrimary,
-                  ),
+                // Statistics Section
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'İstatistiklerim',
+                      style: Theme.of(context).textTheme.headlineLarge?.copyWith(
+                        fontWeight: FontWeight.bold,
+                        color: AppTheme.textPrimary,
+                        fontSize: 24,
+                      ),
+                    ),
+                    InkWell(
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const StatsScreen(),
+                          ),
+                        );
+                      },
+                      child: const Icon(
+                        Icons.bar_chart_rounded,
+                        color: AppTheme.primaryPurple,
+                        size: 28,
+                      ),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 16),
                 GridView.count(
@@ -318,9 +659,21 @@ class HomePage extends StatelessWidget {
                   mainAxisSpacing: 12,
                   childAspectRatio: 1.1,
                   children: [
-                    _buildStatCard('250+', 'Toplam\nKelime', AppTheme.accentBlue),
-                    _buildStatCard('15', 'Seri\nGün', AppTheme.accentGreen),
-                    _buildStatCard('1250', 'XP', AppTheme.primaryPurple),
+                    _buildStatCard(
+                      _isLoading ? '...' : '$_totalWordsCount',
+                      'Toplam\nKelime',
+                      AppTheme.accentBlue,
+                    ),
+                    _buildStatCard(
+                      _isLoading ? '...' : '$_streakDays',
+                      'Seri\nGün',
+                      AppTheme.accentGreen,
+                    ),
+                    _buildStatCard(
+                      _isLoading ? '...' : '$_xp',
+                      'XP',
+                      AppTheme.primaryPurple,
+                    ),
                   ],
                 ),
                 const SizedBox(height: 24),
@@ -353,30 +706,48 @@ class HomePage extends StatelessWidget {
                     ),
                   ],
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 12),
+                // Recent Words List - Inside scroll
+                Container(
+                  constraints: const BoxConstraints(maxHeight: 200),
+                  decoration: BoxDecoration(
+                    color: AppTheme.darkSurface,
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: _isLoading
+                      ? const Center(
+                          child: Padding(
+                            padding: EdgeInsets.all(16.0),
+                            child: CircularProgressIndicator(),
+                          ),
+                        )
+                      : _recentWords.isEmpty
+                          ? Center(
+                              child: Padding(
+                                padding: const EdgeInsets.all(16.0),
+                                child: Text(
+                                  'Henüz kelime öğrenilmemiş',
+                                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                    color: AppTheme.textSecondary,
+                                  ),
+                                ),
+                              ),
+                            )
+                          : ListView.builder(
+                              shrinkWrap: true,
+                              padding: const EdgeInsets.all(8),
+                              itemCount: _recentWords.length,
+                              itemBuilder: (context, index) {
+                                final word = _recentWords[index];
+                                return _buildRecentWordItem(
+                                  word.englishWord,
+                                  word.turkishMeaning,
+                                );
+                              },
+                            ),
+                ),
                     ],
                   ),
-                ),
-              ),
-              // Recent Words List - Fixed at bottom
-              Container(
-                height: 200,
-                decoration: BoxDecoration(
-                  color: AppTheme.darkSurface,
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: ListView.builder(
-                  padding: const EdgeInsets.all(8),
-                  itemCount: 4,
-                  itemBuilder: (context, index) {
-                    final words = [
-                      {'word': 'agitation', 'translation': 'Huzursuzluk, Çalkantı'},
-                      {'word': 'cordial', 'translation': 'Samimi, İçten'},
-                      {'word': 'burn-out', 'translation': 'Tükenmişlik'},
-                      {'word': 'prescribe', 'translation': 'Reçete yazmak'},
-                    ];
-                    return _buildRecentWordItem(words[index]['word']!, words[index]['translation']!);
-                  },
                 ),
               ),
             ],

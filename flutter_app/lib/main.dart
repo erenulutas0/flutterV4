@@ -4,14 +4,23 @@ import 'screens/home_screen.dart';
 import 'providers/word_provider.dart';
 import 'providers/sentence_provider.dart';
 import 'services/api_service.dart';
+import 'services/sync_service.dart';
 import 'theme/app_theme.dart';
 import 'utils/backend_config.dart';
+
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
+  // Load environment variables
+  await dotenv.load(fileName: ".env");
+  
   // Emülatör tespitini başlat
   await BackendConfig.initialize();
+  
+  // Offline senkronizasyon servisini başlat
+  SyncService().initialize();
   
   runApp(const MyApp());
 }

@@ -2,14 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:permission_handler/permission_handler.dart';
-import 'package:audioplayers/audioplayers.dart';
+import 'package:flutter_tts/flutter_tts.dart'; // YENİ: Yerel TTS motoru
 import 'dart:convert';
 import 'dart:async';
-import 'dart:typed_data';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import '../theme/app_theme.dart';
-import '../services/piper_tts_service.dart';
 import '../utils/backend_config.dart';
+import '../services/sync_service.dart';
 // import 'dart:html' as html; // Web only - disabled for Android
 
 class ChatMessage {
@@ -36,18 +35,16 @@ class _ChatScreenState extends State<ChatScreen> {
   final List<ChatMessage> _messages = [];
   final ScrollController _scrollController = ScrollController();
   final stt.SpeechToText _speech = stt.SpeechToText();
-  final PiperTtsService _piperTtsService = PiperTtsService();
-  final AudioPlayer _audioPlayer = AudioPlayer();
+  final FlutterTts _flutterTts = FlutterTts(); // YENİ: Flutter TTS
   
   bool _isLoading = false;
   bool _isListening = false;
   bool _isSpeaking = false;
-  bool _isInConversation = false; // NEW: Conversation mode
-  String _selectedVoice = 'female'; // 'female' or 'male'
+  bool _isInConversation = false;
+  String _selectedVoice = 'female';
   String _recognizedText = '';
   bool _speechInitialized = false;
-  bool _piperTtsAvailable = false;
-  Timer? _sendTimer; // Timer for auto-sending message after pause
+  Timer? _sendTimer;
   
   // IELTS/TOEFL Speaking Test states
   String? _testMode; // null, 'IELTS', or 'TOEFL'
@@ -64,7 +61,7 @@ class _ChatScreenState extends State<ChatScreen> {
   void initState() {
     super.initState();
     _initializeSpeech();
-    _checkPiperTts();
+    _initTts();
     // Welcome message (only if not in test mode)
     _messages.add(ChatMessage(
       text: "Hello! I'm Owen, your English conversation tutor. Let's practice English together! How are you today?",
@@ -73,16 +70,41 @@ class _ChatScreenState extends State<ChatScreen> {
     ));
   }
   
-  Future<void> _checkPiperTts() async {
-    bool available = await _piperTtsService.isAvailable();
-    setState(() {
-      _piperTtsAvailable = available;
+  Future<void> _initTts() async {
+    await _flutterTts.setLanguage("en-US");
+    await _flutterTts.setSpeechRate(0.5);
+    await _flutterTts.setVolume(1.0);
+    await _flutterTts.setPitch(1.0);
+    
+    // Ses seçimi (isteğe bağlı, platforma göre değişir)
+    // await _flutterTts.setVoice({"name": "en-us-x-tpf-local", "locale": "en-US"});
+
+    _flutterTts.setStartHandler(() {
+      setState(() {
+        _isSpeaking = true;
+      });
     });
-    if (available) {
-      print('Piper TTS is available - using high-quality voices');
-    } else {
-      print('Piper TTS is not available');
-    }
+
+    _flutterTts.setCompletionHandler(() {
+      setState(() {
+        _isSpeaking = false;
+      });
+      // Konuşma sonrası otomatik dinlemeye geç (sohbet modundaysa)
+      if (_isInConversation && !_isListening && !_isLoading) {
+        Future.delayed(const Duration(milliseconds: 500), () {
+          if (mounted && _isInConversation && !_isListening) {
+             _startListening();
+          }
+        });
+      }
+    });
+
+    _flutterTts.setErrorHandler((msg) {
+      print("TTS Error: $msg");
+      setState(() {
+        _isSpeaking = false;
+      });
+    });
   }
 
   Future<void> _initializeSpeech() async {
@@ -109,8 +131,28 @@ class _ChatScreenState extends State<ChatScreen> {
         }
       },
       onError: (error) {
-        print('Speech recognition error: $error');
-        // Try to restart listening on error
+        print('Speech recognition error: ${error.errorMsg} - ${error.permanent}');
+        
+        // Timeout handling
+        if (error.errorMsg == 'error_speech_timeout') {
+            if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Focus lost or no sound detected. Please tap Start again.'),
+                    backgroundColor: AppTheme.accentOrange,
+                    duration: Duration(seconds: 3),
+                  ),
+                );
+            }
+             // Do NOT auto-restart immediately on timeout to prevent loops
+             setState(() {
+               _isInConversation = false;
+               _isListening = false;
+             });
+             return;
+        }
+
+        // Retry for other errors
         if (_isInConversation && mounted && !_isSpeaking && !_isLoading) {
           Future.delayed(const Duration(seconds: 1), () {
             if (mounted && _isInConversation && !_isListening && !_isSpeaking && !_isLoading) {
@@ -132,7 +174,7 @@ class _ChatScreenState extends State<ChatScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Speech recognition is not available on this browser. Try Chrome.'),
+            content: Text('Speech recognition is not available on this device.'),
             backgroundColor: AppTheme.accentRed,
             duration: Duration(seconds: 5),
           ),
@@ -185,6 +227,23 @@ class _ChatScreenState extends State<ChatScreen> {
       return;
     }
     
+    // İnternet kontrolü
+    if (!await SyncService.hasInternet()) {
+      print('No internet, cannot start conversation');
+      if (mounted) {
+        setState(() {
+          _isInConversation = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Konuşma için internet bağlantısı gereklidir.'),
+            backgroundColor: AppTheme.accentOrange,
+          ),
+        );
+      }
+      return;
+    }
+    
     if (!_speechInitialized) {
       print('Speech not initialized, initializing now...');
       await _initializeSpeech();
@@ -229,10 +288,10 @@ class _ChatScreenState extends State<ChatScreen> {
             _handleFinalResult(result.recognizedWords.trim());
           }
         },
-        listenFor: const Duration(minutes: 5), // Long listening time
-        pauseFor: const Duration(seconds: 5), // Longer pause tolerance
+        listenFor: const Duration(seconds: 30), 
+        pauseFor: const Duration(seconds: 5), // Daha uzun bekleme süresi (dediklerimi yutmaması için)
         localeId: 'en-US',
-        listenMode: stt.ListenMode.dictation,
+        listenMode: stt.ListenMode.dictation, // Dictation modu daha doğal cümleler için
         cancelOnError: false,
         partialResults: true,
       );
@@ -276,8 +335,8 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> _speak(String text) async {
-    // Stop any ongoing speech before starting new one
-    await _audioPlayer.stop();
+    // Stop any ongoing speech
+    await _flutterTts.stop();
 
     setState(() {
       _isSpeaking = true;
@@ -286,100 +345,19 @@ class _ChatScreenState extends State<ChatScreen> {
     String cleanedText = text.trim();
     print('Speaking: $cleanedText');
     
-    // Try Piper TTS first if available (high quality)
-    if (_piperTtsAvailable) {
-      try {
-        // Select voice based on gender preference
-        // Default to 'amy' since it's available, fallback to others if they exist
-        String piperVoice = _selectedVoice == 'female' ? 'amy' : 'amy'; // Use amy for now
-        
-        Uint8List? audioData = await _piperTtsService.synthesize(cleanedText, voice: piperVoice);
-        
-        if (audioData != null && audioData.isNotEmpty) {
-          // For web, use Blob URL; for other platforms, use BytesSource
-          if (kIsWeb) {
-            // Web için Blob URL kullan (data URI çalışmıyor)
-            try {
-              // Web-only: dart:html disabled for Android
-              // Android'de direkt BytesSource kullan
-              await _audioPlayer.play(BytesSource(audioData));
-            } catch (e) {
-              print('Web audio playback error: $e');
-              // Fallback: BytesSource dene
-              await _audioPlayer.play(BytesSource(audioData));
-            }
-          } else {
-            // Use BytesSource for mobile/desktop
-            await _audioPlayer.play(BytesSource(audioData));
-          }
-          
-          // Wait for playback to complete using a Completer
-          final completer = Completer<void>();
-          StreamSubscription? subscription;
-          
-          subscription = _audioPlayer.onPlayerComplete.listen((_) {
-            subscription?.cancel();
-            if (mounted) {
-              setState(() {
-                _isSpeaking = false;
-              });
-              // Auto-restart listening if in conversation mode
-              if (_isInConversation && !_isListening) {
-                Future.delayed(const Duration(milliseconds: 500), () {
-                  if (mounted && _isInConversation) {
-                    _startListening();
-                  }
-                });
-              }
-            }
-            if (!completer.isCompleted) {
-              completer.complete();
-            }
-          });
-          
-          // Wait for completion with timeout
-          await completer.future.timeout(
-            const Duration(seconds: 60),
-            onTimeout: () {
-              subscription?.cancel();
-              if (mounted) {
-                setState(() {
-                  _isSpeaking = false;
-                });
-              }
-            },
-          );
-          
-          return; // Successfully used Piper TTS
-        }
-      } catch (e) {
-        print('Piper TTS failed: $e');
-      }
+    // Speak using FlutterTts (Native TTS)
+    // Ses tonunu seçilen cinsiyete göre ayarla
+    if (_selectedVoice == 'female') {
+        await _flutterTts.setPitch(1.0); 
+    } else {
+        await _flutterTts.setPitch(0.7); // Erkek sesi için biraz kalınlaştır
     }
     
-    // If Piper TTS is not available, show error
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Text-to-speech is not available. Please ensure Piper TTS is configured on the backend.'),
-          backgroundColor: AppTheme.accentRed,
-        ),
-      );
-      setState(() {
-        _isSpeaking = false;
-      });
-    }
-    
-    // Mark as done (completion handler also does this)
-    if (mounted) {
-      setState(() {
-        _isSpeaking = false;
-      });
-    }
+    await _flutterTts.speak(cleanedText);
   }
 
   Future<void> _stopSpeaking() async {
-    await _audioPlayer.stop();
+    await _flutterTts.stop();
     setState(() {
       _isSpeaking = false;
     });
@@ -391,7 +369,7 @@ class _ChatScreenState extends State<ChatScreen> {
     _messageController.dispose();
     _scrollController.dispose();
     _speech.cancel();
-    _audioPlayer.dispose();
+    _flutterTts.stop();
     super.dispose();
   }
 
@@ -439,6 +417,17 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> _processMessage(String message) async {
+    if (!await SyncService.hasInternet()) {
+      setState(() {
+        _messages.add(ChatMessage(
+          text: "Üzgünüm, şu an internet bağlantısı yok. Çevrimdışı çalışamıyorum. Lütfen internetini kontrol et.",
+          isUser: false,
+          timestamp: DateTime.now(),
+        ));
+      });
+      _speak("I cannot work offline. Please check your internet connection.");
+      return;
+    }
     // Don't process messages in test mode (test has its own flow)
     if (_isTestActive) {
       return;
@@ -1378,7 +1367,7 @@ class _ChatScreenState extends State<ChatScreen> {
     
     // Stop any ongoing speech/listening
     await _speech.stop();
-    await _audioPlayer.stop();
+    await _flutterTts.stop();
 
     // Request microphone permission
     var status = await Permission.microphone.request();

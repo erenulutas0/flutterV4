@@ -2,15 +2,17 @@ import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:device_info_plus/device_info_plus.dart';
 
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+
 /// Backend URL yapılandırması
 /// Emülatör için 10.0.2.2, gerçek cihaz için bilgisayarın IP'si kullanılır
 class BackendConfig {
   // Bilgisayarınızın IP adresi (gerçek cihazlar için)
   // Eğer farklı bir IP kullanıyorsanız, burayı güncelleyin
-  static const String _realDeviceIp = '192.168.1.102';
+  static String get _realDeviceIp => dotenv.env['REAL_DEVICE_IP'] ?? '192.168.1.102';
   
   // Emülatör için özel IP
-  static const String _emulatorIp = '10.0.2.2';
+  static String get _emulatorIp => dotenv.env['EMULATOR_IP'] ?? '10.0.2.2';
   
   // Cache için
   static bool? _cachedIsEmulator;
